@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NFC Space Crew - 대규모 실시간 오프라인 액션 서바이벌</title>
     <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="text/javascript" nonce="f859c3449a6f4215b6316ff8cd8" src="//local.adguard.org?ts=1791431901987&amp;type=content-script&amp;dmn=chatgpt.com&amp;url=https%3A%2F%2Fchatgpt.com%2Fbackend-api%2Festuary%2Fcontent%3Fid%3Dfile_00000000ced48209b145086f65978518%26fn%3Dindex%25284%2529.html%26cd%3Dattachment%26ts%3D497620%26p%3Dfs%26cid%3D1%26sig%3D3c27a672a1f0f2a4eaf338228944c823379d9fdb7627a0ca8da16485d1672dad%26v%3D0&amp;app=chrome.exe&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=0&amp;stealth=0"></script><script type="text/javascript" nonce="f859c3449a6f4215b6316ff8cd8" src="//local.adguard.org?ts=1791431901987&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts Inter & Orbitron for Sci-Fi vibe -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;600;800;900&display=swap" rel="stylesheet">
     <!-- MQTT.js for Real-time Decentralized synchronization over WebSockets -->
@@ -395,6 +395,19 @@
                         <div class="mb-4">
                             <h2 class="scifi-font text-xs font-bold text-red-400 tracking-wide mb-1.5 uppercase flex items-center gap-1">
                                 <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span> 🚨 실시간 함선 통제 상황판 (사망 보고)
+                <div id="gm-force-controls" class="inline-flex items-center gap-1.5 ml-2 align-middle">
+                    <button onclick="confirmForceGameOver()" id="btn-force-gameover" class="bg-red-950/80 hover:bg-red-900 border border-red-500/50 text-red-200 px-2 py-1 rounded text-[10px] font-bold transition">게임 종료</button>
+                    <button onclick="confirmResetToLobby()" id="btn-force-reset" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 px-2 py-1 rounded text-[10px] font-bold transition">게임 초기화</button>
+                    <div id="gm-force-confirm-panel" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                        <div class="bg-slate-950 border border-red-500/30 rounded-lg p-3 space-y-2 w-64 shadow-xl">
+                            <p id="gm-force-confirm-text" class="text-[10px] text-red-300 font-bold text-center">⚠️ 현재 게임을 강제로 종료할까요?</p>
+                            <div class="flex gap-2">
+                                <button id="gm-force-confirm-ok" class="flex-1 bg-red-700 hover:bg-red-600 text-white py-1.5 rounded text-[10px] font-bold transition">✔ 진행</button>
+                                <button onclick="cancelGmForceAction()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-1.5 rounded text-[10px] font-bold transition">✕ 취소</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                             </h2>
                             <div class="bg-slate-900 border border-slate-800/80 rounded-xl p-2.5 max-h-36 overflow-y-auto" id="gm-death-logs-container">
                                 <div class="text-center text-slate-500 text-[10px] py-4">사망 보고가 등록되지 않았습니다. 안심하십시오.</div>
@@ -429,6 +442,8 @@
                             </button>
                         </div>
                     </div>
+
+                    
 
                     <!-- Quick Step-by-Step guide to setup the game offline -->
                     <div class="mt-2 bg-slate-900/60 rounded-xl p-2.5 border border-slate-800/80 text-xs">
@@ -770,6 +785,15 @@
             const loaded = loadConfigFromLocalStorage();
             if (!loaded) {
                 initializeDefaultPlayers(24);
+            } else {
+                // 🛡️ [ROLE SECURITY FIX]: A fresh page starts in LOBBY, so never expose a role
+                // left over in LocalStorage from a previous round. If a live game is restored,
+                // the authoritative GM STATE_SYNC will restore the real roles immediately.
+                config.players.forEach(p => {
+                    p.role = "CREWMATE";
+                    p.isAlive = true;
+                    p.isReady = false;
+                });
             }
             detectWebNfc();
             initializeLobbySetup();
@@ -1064,6 +1088,13 @@
                     }
                     break;
 
+                case 'GAME_FORCE_END':
+                    if (gameState === "IN_GAME") {
+                        triggerGameOver("MANUAL_END");
+                        showSystemAlert("🛑 GM에 의해 게임이 강제 종료되었습니다.", "error");
+                    }
+                    break;
+
                 case 'GAME_RESET':
                     gameState = "LOBBY";
                     activePlayer = null;
@@ -1233,6 +1264,8 @@
                 closeVoteEjectPanel();
             } else if (gameState === "GAMEOVER") {
                 document.getElementById('gm-vote-actions').classList.add('hidden');
+                document.getElementById('gm-master-actions').classList.add('hidden');
+                document.getElementById('gm-lobby-actions').classList.add('hidden');
                 closeVoteEjectPanel();
             }
         }
@@ -1257,16 +1290,9 @@
                 });
             }
 
-            // Shuffle & Assign Impostors based on config scale
-            let assigned = 0;
-            const targetImpostors = config.impostorCount;
-            while (assigned < targetImpostors && totalCount > targetImpostors) {
-                const rand = Math.floor(Math.random() * totalCount);
-                if (config.players[rand].role !== "IMPOSTOR") {
-                    config.players[rand].role = "IMPOSTOR";
-                    assigned++;
-                }
-            }
+            // 🛡️ [ROLE SECURITY FIX]: Lobby/reset state must NEVER assign or retain impostor roles.
+            // Roles are assigned exactly once, when the GM presses "게임 시작" in startGame().
+            // This prevents the previous round's impostor from being revealed during preparation.
 
             config.traps = {
                 MissionWire: { active: false, placedBy: null },
@@ -1705,6 +1731,12 @@
                 title.textContent = "크루원 대승리!";
                 title.className = "scifi-font text-xl font-black text-emerald-400 animate-bounce";
                 desc.textContent = "크루원 전원이 합심하여 지정 목표 수리 작업을 완벽히 끝마치고 임포스터의 파괴 공작으로부터 함선을 사수해 비행 경로를 복원했습니다!";
+            } else if (winner === "MANUAL_END") {
+                SoundSynth.playBeep(440, 'square', 0.25);
+                emoji.textContent = "🛑";
+                title.textContent = "GM에 의해 게임 종료";
+                title.className = "scifi-font text-xl font-black text-amber-400";
+                desc.textContent = "게임 마스터가 현재 게임을 임의로 종료했습니다. 아래에서 생존자와 역할을 확인한 뒤 대기실로 돌아갈 수 있습니다.";
             } else {
                 SoundSynth.playError();
                 emoji.textContent = "💀";
@@ -1728,11 +1760,63 @@
             });
         }
 
+        // GM manual game controls
+        let pendingGmForceAction = null;
+
+        function confirmForceGameOver() {
+            if (!isGM) {
+                showSystemAlert("GM만 게임을 강제로 종료할 수 있습니다.", "error");
+                return;
+            }
+            if (gameState !== "IN_GAME") {
+                showSystemAlert("진행 중인 게임이 없습니다.", "error");
+                return;
+            }
+            pendingGmForceAction = "GAMEOVER";
+            const panel = document.getElementById('gm-force-confirm-panel');
+            const text = document.getElementById('gm-force-confirm-text');
+            const ok = document.getElementById('gm-force-confirm-ok');
+            text.textContent = "⚠️ 현재 게임을 강제로 종료하고 결과 화면으로 이동할까요?";
+            ok.textContent = "✔ 종료";
+            ok.onclick = executeGmForceAction;
+            panel.classList.remove('hidden');
+        }
+
         function confirmResetToLobby() {
-            // 🛡️ [FIX]: Show a confirmation panel instead of immediately resetting — prevents accidental
-            // mid-game wipes that send everyone back to lobby unintentionally.
-            const panel = document.getElementById('reset-confirm-panel');
-            if (panel) panel.classList.remove('hidden');
+            if (!isGM) {
+                showSystemAlert("GM만 게임을 초기화할 수 있습니다.", "error");
+                return;
+            }
+            if (gameState === "LOBBY") {
+                showSystemAlert("이미 대기실 상태입니다.", "info");
+                return;
+            }
+            pendingGmForceAction = "RESET";
+            const panel = document.getElementById('gm-force-confirm-panel');
+            const text = document.getElementById('gm-force-confirm-text');
+            const ok = document.getElementById('gm-force-confirm-ok');
+            text.textContent = "⚠️ 현재 게임을 즉시 종료하고 모든 기기를 대기실로 초기화할까요?";
+            ok.textContent = "✔ 초기화";
+            ok.onclick = executeGmForceAction;
+            panel.classList.remove('hidden');
+        }
+
+        function cancelGmForceAction() {
+            pendingGmForceAction = null;
+            const panel = document.getElementById('gm-force-confirm-panel');
+            if (panel) panel.classList.add('hidden');
+        }
+
+        function executeGmForceAction() {
+            const action = pendingGmForceAction;
+            cancelGmForceAction();
+            if (action === "GAMEOVER") {
+                triggerGameOver("MANUAL_END");
+                publishSyncEvent('GAME_FORCE_END', {});
+                showSystemAlert("🛑 게임을 강제로 종료했습니다.", "error");
+            } else if (action === "RESET") {
+                resetToLobby();
+            }
         }
 
         // Full reset of states to restart
