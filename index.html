@@ -1366,24 +1366,24 @@
             config.players.forEach((p, idx) => {
                 const btn = document.createElement('button');
                 btn.onclick = () => simulateNfcScan(p.id);
-                btn.className = `flex flex-col justify-between bg-slate-900 border ${p.isAlive ? 'border-slate-800 hover:border-cyan-500/50' : 'border-red-950 opacity-60'} p-1.5 rounded text-left transition text-[10px]`;
-                
-                let statusText = p.isReady ? '준비완료' : '미스캔';
-                if (gameState !== "LOBBY") {
-                    statusText = p.isAlive ? (p.role === 'IMPOSTOR' ? '임포스터' : '크루') : '처치됨';
-                }
+                btn.className = `flex flex-col justify-between bg-slate-900 border ${p.isAlive ? 'border-slate-800 hover:border-cyan-500/50' : 'border-red-300 bg-red-50'} p-1.5 rounded text-left transition text-[10px]`;
 
-                const roleColorClass = p.isAlive ? 
-                    (p.role === 'IMPOSTOR' && gameState !== "LOBBY" ? 'text-red-400 bg-red-950/40' : 'text-cyan-400 bg-cyan-950/40') : 
-                    'text-red-500 bg-slate-950';
+                const isLobby = gameState === "LOBBY";
+                const statusText = isLobby
+                    ? (p.isReady ? '준비완료' : '미스캔')
+                    : (p.role === 'IMPOSTOR' ? '임포스터' : '크루');
+                const statusColorClass = isLobby
+                    ? (p.isReady ? 'text-emerald-800 bg-emerald-100' : 'text-slate-800 bg-slate-200')
+                    : (p.role === 'IMPOSTOR' ? 'text-red-800 bg-red-100' : 'text-blue-800 bg-blue-100');
 
                 btn.innerHTML = `
-                    <div class="flex items-center justify-between w-full">
-                        <span class="font-bold text-slate-200 truncate w-14">${p.name}</span>
+                    <div class="flex items-center w-full gap-1 min-w-0">
+                        <span class="font-bold ${p.isAlive ? 'text-slate-200' : 'text-slate-900'} truncate min-w-0">${p.name}</span>
+                        ${!p.isAlive ? '<span class="text-[10px] font-bold text-red-800 whitespace-nowrap shrink-0">(처치됨)</span>' : ''}
                     </div>
-                    <div class="flex justify-between items-center mt-1 text-[8px]">
-                        <span class="text-slate-500">P${idx+1}</span>
-                        <span class="${roleColorClass} px-1 rounded scale-90">${statusText}</span>
+                    <div class="flex items-center justify-between w-full mt-1">
+                        <span class="text-[10px] font-bold ${p.isAlive ? 'text-slate-400' : 'text-slate-700'} shrink-0">P${idx+1}</span>
+                        <span class="${statusColorClass} text-[10px] px-1.5 py-0.5 rounded leading-tight font-bold">${statusText}</span>
                     </div>
                 `;
                 grid.appendChild(btn);
